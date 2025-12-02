@@ -4,6 +4,7 @@ let threeRenderer = null;
 let threeScene = null;
 let threeCamera = null;
 let phoneModel = null;
+let phonePivot = null;  // Pivot group for rotation around screen center
 let screenMesh = null;
 let customScreenPlane = null;
 let orbitControls = null;
@@ -31,15 +32,17 @@ const deviceConfigs = {
         screenHeightFactor: 0.82,
         screenOffset: { x: 0.025, y: 0.745, z: 0.098 },
         positionOffsetFactor: 0.81,
-        cornerRadiusFactor: 0.15
+        cornerRadiusFactor: 0.15,
+        modelRotation: { x: 0, y: 0, z: 0 }  // No correction needed
     },
     samsung: {
         modelPath: 'models/samsung-galaxy-s25-ultra.glb',
         aspectRatio: 1440 / 3120,
         screenHeightFactor: 0.66,
-        screenOffset: { x: 0, y: 0, z: 0.1 },  // Will need adjustment
+        screenOffset: { x: 0, y: 0.02, z: 0.08},  // Will need adjustment
         positionOffsetFactor: 0.5,
-        cornerRadiusFactor: 0.12
+        cornerRadiusFactor: 0.04,
+        modelRotation: { x: 15.3, y: 0, z: 0 }  // Adjust to correct model tilt (in degrees)
     }
 };
 
@@ -198,10 +201,25 @@ function loadPhoneModel() {
                 console.log('  -> Using largest glass mesh as screen:', screenMesh.name);
             }
 
+            // Create a pivot group for rotation around screen center
+            const config = deviceConfigs[currentDeviceModel] || deviceConfigs.iphone;
+            const screenOffset = config.screenOffset;
+
+            phonePivot = new THREE.Group();
+
+            // Offset the phone model so the screen center is at the pivot's origin
+            phoneModel.position.set(
+                -screenOffset.x * baseModelScale,
+                -screenOffset.y * baseModelScale,
+                -screenOffset.z * baseModelScale
+            );
+
+            phonePivot.add(phoneModel);
+            threeScene.add(phonePivot);
+
             // Create a custom screen plane overlay since the model's UV mapping may be incorrect
             createScreenOverlay();
 
-            threeScene.add(phoneModel);
             phoneModelLoaded = true;
 
             // Apply initial settings from state
@@ -250,15 +268,16 @@ function switchPhoneModel(deviceType) {
     currentDeviceModel = deviceType;
     phoneModelLoading = false; // Reset so we can load the new one
 
-    // Remove current model from scene
-    if (phoneModel && threeScene) {
-        threeScene.remove(phoneModel);
-        phoneModel.traverse((child) => {
+    // Remove current pivot (which contains the model) from scene
+    if (phonePivot && threeScene) {
+        threeScene.remove(phonePivot);
+        phonePivot.traverse((child) => {
             if (child.isMesh) {
                 child.geometry?.dispose();
                 child.material?.dispose();
             }
         });
+        phonePivot = null;
         phoneModel = null;
     }
 
@@ -295,10 +314,23 @@ function switchPhoneModel(deviceType) {
             baseModelScale = 3.75 / maxDim;
             phoneModel.scale.setScalar(baseModelScale);
 
+            // Create a pivot group for rotation around screen center
+            const screenOffset = config.screenOffset;
+            phonePivot = new THREE.Group();
+
+            // Offset the phone model so the screen center is at the pivot's origin
+            phoneModel.position.set(
+                -screenOffset.x * baseModelScale,
+                -screenOffset.y * baseModelScale,
+                -screenOffset.z * baseModelScale
+            );
+
+            phonePivot.add(phoneModel);
+            threeScene.add(phonePivot);
+
             // Create screen overlay for this device
             createScreenOverlay();
 
-            threeScene.add(phoneModel);
             phoneModelLoaded = true;
 
             // Apply settings
@@ -358,12 +390,20 @@ function createScreenOverlay() {
     const screenOffset = config.screenOffset;
     customScreenPlane.position.set(screenOffset.x, screenOffset.y, screenOffset.z);
 
-    // Add directly to phoneModel so it rotates with it
+    // Counter-rotate the screen to cancel out the model's base rotation
+    // This keeps the screen facing forward when the pivot applies the base rotation
+    const modelRot = config.modelRotation || { x: 0, y: 0, z: 0 };
+    customScreenPlane.rotation.set(
+        -modelRot.x * Math.PI / 180,
+        -modelRot.y * Math.PI / 180,
+        -modelRot.z * Math.PI / 180
+    );
+
+    // Add directly to phoneModel so it moves with it
     phoneModel.add(customScreenPlane);
 
-    // Store base position offset to compensate for screen alignment
-    // This keeps the overall model centered in view
-    basePositionOffset.y = -screenOffset.y * baseModelScale * config.positionOffsetFactor;
+    // basePositionOffset is no longer needed since we use pivot-based rotation
+    basePositionOffset.y = 0;
 
     console.log('Created screen overlay for ' + currentDeviceModel + ' at:', customScreenPlane.position);
     console.log('Plane size:', planeWidth.toFixed(4), 'x', planeHeight.toFixed(4));
@@ -413,10 +453,9 @@ function updateScreenTexture() {
         screenTexture.dispose();
     }
 
-    // Create rounded corner version of the image
-    // iPhone 15 Pro Max has ~55px corner radius on 1290px width screen (~4.3%)
-    // But the physical device corners are larger, around 6-7%
-    const cornerRadius = Math.round(screenshot.image.width * 0.15);
+    // Create rounded corner version of the image using device-specific corner radius
+    const config = deviceConfigs[currentDeviceModel] || deviceConfigs.iphone;
+    const cornerRadius = Math.round(screenshot.image.width * config.cornerRadiusFactor);
     const roundedImage = createRoundedScreenImage(screenshot.image, cornerRadius);
 
     screenTexture = new THREE.Texture(roundedImage);
@@ -444,11 +483,18 @@ function updateScreenTexture() {
 
 // Set 3D rotation from sliders (in degrees)
 function setThreeJSRotation(rotX, rotY, rotZ) {
-    if (!phoneModel) return;
+    if (!phonePivot) return;
 
-    phoneModel.rotation.x = rotX * Math.PI / 180;
-    phoneModel.rotation.y = rotY * Math.PI / 180;
-    phoneModel.rotation.z = rotZ * Math.PI / 180;
+    // Add the device's base model rotation to the user's rotation
+    const config = deviceConfigs[currentDeviceModel] || deviceConfigs.iphone;
+    const modelRot = config.modelRotation || { x: 0, y: 0, z: 0 };
+
+    console.log('setThreeJSRotation:', currentDeviceModel, 'modelRot:', modelRot, 'user:', rotX, rotY, rotZ);
+
+    // Rotate the pivot (which rotates around the screen center)
+    phonePivot.rotation.x = (rotX + modelRot.x) * Math.PI / 180;
+    phonePivot.rotation.y = (rotY + modelRot.y) * Math.PI / 180;
+    phonePivot.rotation.z = (rotZ + modelRot.z) * Math.PI / 180;
 
     // Trigger render update
     requestThreeJSRender();
@@ -486,15 +532,15 @@ function animateThreeJS() {
 
 // Render 3D phone only (with transparent background) to be composited
 function renderThreeJSToCanvas(targetCanvas, width, height) {
-    if (!threeRenderer || !threeScene || !threeCamera || !phoneModel) return;
+    if (!threeRenderer || !threeScene || !threeCamera || !phonePivot) return;
 
     const dims = { width: width || 1290, height: height || 2796 };
 
     // Store original values
     const originalBackground = threeScene.background;
-    const originalPosition = phoneModel.position.clone();
-    const originalScale = phoneModel.scale.clone();
-    const originalRotation = phoneModel.rotation.clone();
+    const originalPosition = phonePivot.position.clone();
+    const originalScale = phonePivot.scale.clone();
+    const originalRotation = phonePivot.rotation.clone();
 
     // Apply position, scale, and rotation from screenshot settings
     if (typeof state !== 'undefined') {
@@ -503,25 +549,27 @@ function renderThreeJSToCanvas(targetCanvas, width, height) {
         if (ss) {
             // Scale: use screenshot.scale to adjust model size
             const screenshotScale = ss.scale / 100;
-            phoneModel.scale.setScalar(baseModelScale * screenshotScale);
+            phonePivot.scale.setScalar(screenshotScale);
 
             // Position: convert percentage to 3D space offset
             // X: 0% = left, 50% = center, 100% = right
             // Y: 0% = top, 50% = center, 100% = bottom
             const xOffset = ((ss.x - 50) / 50) * 2; // -2 to 2 range
             const yOffset = -((ss.y - 50) / 50) * 3; // -3 to 3 range (inverted for 3D)
-            phoneModel.position.set(
+            phonePivot.position.set(
                 xOffset + basePositionOffset.x,
                 yOffset + basePositionOffset.y,
                 basePositionOffset.z
             );
 
-            // Rotation: apply 3D rotation from current screenshot settings
+            // Rotation: apply 3D rotation from current screenshot settings + model base rotation
             const rotation3D = ss.rotation3D || { x: 0, y: 0, z: 0 };
-            phoneModel.rotation.set(
-                rotation3D.x * Math.PI / 180,
-                rotation3D.y * Math.PI / 180,
-                rotation3D.z * Math.PI / 180
+            const config = deviceConfigs[currentDeviceModel] || deviceConfigs.iphone;
+            const modelRot = config.modelRotation || { x: 0, y: 0, z: 0 };
+            phonePivot.rotation.set(
+                (rotation3D.x + modelRot.x) * Math.PI / 180,
+                (rotation3D.y + modelRot.y) * Math.PI / 180,
+                (rotation3D.z + modelRot.z) * Math.PI / 180
             );
         }
     }
@@ -551,14 +599,14 @@ function renderThreeJSToCanvas(targetCanvas, width, height) {
     threeCamera.aspect = oldSize.width / oldSize.height;
     threeCamera.updateProjectionMatrix();
     threeScene.background = originalBackground;
-    phoneModel.position.copy(originalPosition);
-    phoneModel.scale.copy(originalScale);
-    phoneModel.rotation.copy(originalRotation);
+    phonePivot.position.copy(originalPosition);
+    phonePivot.scale.copy(originalScale);
+    phonePivot.rotation.copy(originalRotation);
 }
 
 // Render 3D for a specific screenshot index (used for side previews)
 function renderThreeJSForScreenshot(targetCanvas, width, height, screenshotIndex) {
-    if (!threeRenderer || !threeScene || !threeCamera || !phoneModel) return;
+    if (!threeRenderer || !threeScene || !threeCamera || !phonePivot) return;
     if (typeof state === 'undefined' || !state.screenshots[screenshotIndex]) return;
 
     const screenshot = state.screenshots[screenshotIndex];
@@ -567,14 +615,15 @@ function renderThreeJSForScreenshot(targetCanvas, width, height, screenshotIndex
 
     // Store original values
     const originalBackground = threeScene.background;
-    const originalPosition = phoneModel.position.clone();
-    const originalScale = phoneModel.scale.clone();
-    const originalRotation = phoneModel.rotation.clone();
+    const originalPosition = phonePivot.position.clone();
+    const originalScale = phonePivot.scale.clone();
+    const originalRotation = phonePivot.rotation.clone();
 
     // Temporarily update screen texture for this screenshot
     const oldMaterial = customScreenPlane ? customScreenPlane.material : null;
     if (screenshot.image && customScreenPlane) {
-        const cornerRadius = Math.round(screenshot.image.width * 0.15);
+        const config = deviceConfigs[currentDeviceModel] || deviceConfigs.iphone;
+        const cornerRadius = Math.round(screenshot.image.width * config.cornerRadiusFactor);
         const roundedImage = createRoundedScreenImage(screenshot.image, cornerRadius);
         const newTexture = new THREE.Texture(roundedImage);
         newTexture.needsUpdate = true;
@@ -589,20 +638,22 @@ function renderThreeJSForScreenshot(targetCanvas, width, height, screenshotIndex
         customScreenPlane.material = newMaterial;
     }
 
-    // Apply rotation for this screenshot
+    // Apply rotation for this screenshot + model base rotation
     const rotation3D = ss.rotation3D || { x: 0, y: 0, z: 0 };
-    phoneModel.rotation.set(
-        rotation3D.x * Math.PI / 180,
-        rotation3D.y * Math.PI / 180,
-        rotation3D.z * Math.PI / 180
+    const config = deviceConfigs[currentDeviceModel] || deviceConfigs.iphone;
+    const modelRot = config.modelRotation || { x: 0, y: 0, z: 0 };
+    phonePivot.rotation.set(
+        (rotation3D.x + modelRot.x) * Math.PI / 180,
+        (rotation3D.y + modelRot.y) * Math.PI / 180,
+        (rotation3D.z + modelRot.z) * Math.PI / 180
     );
 
     // Apply scale and position
     const screenshotScale = ss.scale / 100;
-    phoneModel.scale.setScalar(baseModelScale * screenshotScale);
+    phonePivot.scale.setScalar(screenshotScale);
     const xOffset = ((ss.x - 50) / 50) * 2;
     const yOffset = -((ss.y - 50) / 50) * 3;
-    phoneModel.position.set(
+    phonePivot.position.set(
         xOffset + basePositionOffset.x,
         yOffset + basePositionOffset.y,
         basePositionOffset.z
@@ -633,9 +684,9 @@ function renderThreeJSForScreenshot(targetCanvas, width, height, screenshotIndex
     threeCamera.aspect = oldSize.width / oldSize.height;
     threeCamera.updateProjectionMatrix();
     threeScene.background = originalBackground;
-    phoneModel.position.copy(originalPosition);
-    phoneModel.scale.copy(originalScale);
-    phoneModel.rotation.copy(originalRotation);
+    phonePivot.position.copy(originalPosition);
+    phonePivot.scale.copy(originalScale);
+    phonePivot.rotation.copy(originalRotation);
 
     // Restore original material
     if (oldMaterial && customScreenPlane) {
