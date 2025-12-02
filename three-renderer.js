@@ -24,6 +24,9 @@ let basePositionOffset = { x: 0, y: 0, z: 0 };
 // Current device model type
 let currentDeviceModel = 'iphone';
 
+// Cache for loaded phone models (for rendering different devices in side previews)
+let phoneModelCache = {};  // { deviceType: { model, pivot, screenPlane, baseScale, loaded } }
+
 // Device-specific configurations
 const deviceConfigs = {
     iphone: {
@@ -344,7 +347,8 @@ function switchPhoneModel(deviceType) {
                     updateScreenTexture();
                 }
 
-                if (typeof updateCanvas === 'function') {
+                // Only call updateCanvas if not suppressed (e.g., during slide transitions)
+                if (typeof updateCanvas === 'function' && !window.suppressSwitchModelUpdate) {
                     updateCanvas();
                 }
             }
@@ -359,6 +363,105 @@ function switchPhoneModel(deviceType) {
             console.error('Error loading ' + deviceType + ' model:', error);
         }
     );
+}
+
+// Load a phone model into the cache (for side preview rendering with different devices)
+function loadCachedPhoneModel(deviceType) {
+    if (!deviceConfigs[deviceType]) return Promise.reject('Unknown device type');
+
+    // Already loaded or loading
+    if (phoneModelCache[deviceType]?.loaded) {
+        return Promise.resolve(phoneModelCache[deviceType]);
+    }
+    if (phoneModelCache[deviceType]?.loading) {
+        return phoneModelCache[deviceType].loadingPromise;
+    }
+
+    const config = deviceConfigs[deviceType];
+    const loader = new THREE.GLTFLoader();
+
+    phoneModelCache[deviceType] = { loading: true, loaded: false };
+
+    phoneModelCache[deviceType].loadingPromise = new Promise((resolve, reject) => {
+        loader.load(
+            config.modelPath,
+            (gltf) => {
+                const model = gltf.scene;
+
+                // Center and scale the model
+                const box = new THREE.Box3().setFromObject(model);
+                const center = box.getCenter(new THREE.Vector3());
+                const size = box.getSize(new THREE.Vector3());
+
+                model.position.sub(center);
+
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const modelBaseScale = 3.75 / maxDim;
+                model.scale.setScalar(modelBaseScale);
+
+                // Create pivot for this model
+                const screenOffset = config.screenOffset;
+                const pivot = new THREE.Group();
+
+                model.position.set(
+                    -screenOffset.x * modelBaseScale,
+                    -screenOffset.y * modelBaseScale,
+                    -screenOffset.z * modelBaseScale
+                );
+
+                pivot.add(model);
+
+                // Create screen plane for this model
+                const aspectRatio = config.aspectRatio;
+                const planeHeight = 4.3 * config.screenHeightFactor;
+                const planeWidth = planeHeight * aspectRatio;
+
+                const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
+                const material = new THREE.MeshBasicMaterial({
+                    color: 0x111111,
+                    side: THREE.DoubleSide
+                });
+
+                const screenPlane = new THREE.Mesh(geometry, material);
+                screenPlane.position.set(screenOffset.x, screenOffset.y, screenOffset.z);
+
+                const modelRot = config.modelRotation || { x: 0, y: 0, z: 0 };
+                screenPlane.rotation.set(
+                    -modelRot.x * Math.PI / 180,
+                    -modelRot.y * Math.PI / 180,
+                    -modelRot.z * Math.PI / 180
+                );
+
+                model.add(screenPlane);
+
+                phoneModelCache[deviceType] = {
+                    model: model,
+                    pivot: pivot,
+                    screenPlane: screenPlane,
+                    baseScale: modelBaseScale,
+                    loaded: true,
+                    loading: false
+                };
+
+                console.log('Cached ' + deviceType + ' model for side previews');
+                resolve(phoneModelCache[deviceType]);
+            },
+            undefined,
+            (error) => {
+                console.error('Error loading cached ' + deviceType + ' model:', error);
+                phoneModelCache[deviceType] = { loading: false, loaded: false };
+                reject(error);
+            }
+        );
+    });
+
+    return phoneModelCache[deviceType].loadingPromise;
+}
+
+// Preload all device models for side previews
+function preloadAllPhoneModels() {
+    const deviceTypes = Object.keys(deviceConfigs);
+    return Promise.all(deviceTypes.map(type => loadCachedPhoneModel(type).catch(() => null)));
 }
 
 // Create a custom screen plane overlay with correct UV mapping
@@ -606,23 +709,61 @@ function renderThreeJSToCanvas(targetCanvas, width, height) {
 
 // Render 3D for a specific screenshot index (used for side previews)
 function renderThreeJSForScreenshot(targetCanvas, width, height, screenshotIndex) {
-    if (!threeRenderer || !threeScene || !threeCamera || !phonePivot) return;
+    if (!threeRenderer || !threeScene || !threeCamera) return;
     if (typeof state === 'undefined' || !state.screenshots[screenshotIndex]) return;
 
     const screenshot = state.screenshots[screenshotIndex];
     const ss = screenshot.screenshot;
     const dims = { width: width || 1290, height: height || 2796 };
 
+    // Determine which device model this screenshot uses
+    const screenshotDeviceType = ss.device3D || 'iphone';
+    const config = deviceConfigs[screenshotDeviceType] || deviceConfigs.iphone;
+
+    // Check if this screenshot uses the same device as currently active
+    const useCurrentModel = screenshotDeviceType === currentDeviceModel && phonePivot;
+
+    // Get the model to use (either current or from cache)
+    let pivotToUse, screenPlaneToUse;
+
+    if (useCurrentModel) {
+        // Use the currently loaded model
+        pivotToUse = phonePivot;
+        screenPlaneToUse = customScreenPlane;
+    } else {
+        // Use cached model for different device
+        const cached = phoneModelCache[screenshotDeviceType];
+        if (!cached?.loaded) {
+            // Model not cached yet - trigger loading and skip this render
+            loadCachedPhoneModel(screenshotDeviceType).then(() => {
+                // Trigger a re-render once model is loaded
+                if (typeof updateCanvas === 'function') {
+                    updateCanvas();
+                }
+            });
+            return;
+        }
+        pivotToUse = cached.pivot;
+        screenPlaneToUse = cached.screenPlane;
+
+        // Add cached pivot to scene temporarily
+        threeScene.add(pivotToUse);
+    }
+
     // Store original values
     const originalBackground = threeScene.background;
-    const originalPosition = phonePivot.position.clone();
-    const originalScale = phonePivot.scale.clone();
-    const originalRotation = phonePivot.rotation.clone();
+    const originalPosition = pivotToUse.position.clone();
+    const originalScale = pivotToUse.scale.clone();
+    const originalRotation = pivotToUse.rotation.clone();
+
+    // Hide the current model if we're using a different one
+    if (!useCurrentModel && phonePivot) {
+        phonePivot.visible = false;
+    }
 
     // Temporarily update screen texture for this screenshot
-    const oldMaterial = customScreenPlane ? customScreenPlane.material : null;
-    if (screenshot.image && customScreenPlane) {
-        const config = deviceConfigs[currentDeviceModel] || deviceConfigs.iphone;
+    const oldMaterial = screenPlaneToUse ? screenPlaneToUse.material : null;
+    if (screenshot.image && screenPlaneToUse) {
         const cornerRadius = Math.round(screenshot.image.width * config.cornerRadiusFactor);
         const roundedImage = createRoundedScreenImage(screenshot.image, cornerRadius);
         const newTexture = new THREE.Texture(roundedImage);
@@ -635,14 +776,13 @@ function renderThreeJSForScreenshot(targetCanvas, width, height, screenshotIndex
             side: THREE.FrontSide,
             transparent: true
         });
-        customScreenPlane.material = newMaterial;
+        screenPlaneToUse.material = newMaterial;
     }
 
     // Apply rotation for this screenshot + model base rotation
     const rotation3D = ss.rotation3D || { x: 0, y: 0, z: 0 };
-    const config = deviceConfigs[currentDeviceModel] || deviceConfigs.iphone;
     const modelRot = config.modelRotation || { x: 0, y: 0, z: 0 };
-    phonePivot.rotation.set(
+    pivotToUse.rotation.set(
         (rotation3D.x + modelRot.x) * Math.PI / 180,
         (rotation3D.y + modelRot.y) * Math.PI / 180,
         (rotation3D.z + modelRot.z) * Math.PI / 180
@@ -650,10 +790,10 @@ function renderThreeJSForScreenshot(targetCanvas, width, height, screenshotIndex
 
     // Apply scale and position
     const screenshotScale = ss.scale / 100;
-    phonePivot.scale.setScalar(screenshotScale);
+    pivotToUse.scale.setScalar(screenshotScale);
     const xOffset = ((ss.x - 50) / 50) * 2;
     const yOffset = -((ss.y - 50) / 50) * 3;
-    phonePivot.position.set(
+    pivotToUse.position.set(
         xOffset + basePositionOffset.x,
         yOffset + basePositionOffset.y,
         basePositionOffset.z
@@ -684,18 +824,26 @@ function renderThreeJSForScreenshot(targetCanvas, width, height, screenshotIndex
     threeCamera.aspect = oldSize.width / oldSize.height;
     threeCamera.updateProjectionMatrix();
     threeScene.background = originalBackground;
-    phonePivot.position.copy(originalPosition);
-    phonePivot.scale.copy(originalScale);
-    phonePivot.rotation.copy(originalRotation);
+    pivotToUse.position.copy(originalPosition);
+    pivotToUse.scale.copy(originalScale);
+    pivotToUse.rotation.copy(originalRotation);
 
     // Restore original material
-    if (oldMaterial && customScreenPlane) {
+    if (oldMaterial && screenPlaneToUse) {
         // Dispose the temporary material
-        if (customScreenPlane.material !== oldMaterial) {
-            customScreenPlane.material.map?.dispose();
-            customScreenPlane.material.dispose();
+        if (screenPlaneToUse.material !== oldMaterial) {
+            screenPlaneToUse.material.map?.dispose();
+            screenPlaneToUse.material.dispose();
         }
-        customScreenPlane.material = oldMaterial;
+        screenPlaneToUse.material = oldMaterial;
+    }
+
+    // Clean up: remove cached model from scene and restore current model visibility
+    if (!useCurrentModel) {
+        threeScene.remove(pivotToUse);
+        if (phonePivot) {
+            phonePivot.visible = true;
+        }
     }
 }
 
