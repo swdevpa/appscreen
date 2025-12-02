@@ -32,10 +32,10 @@ const deviceConfigs = {
     iphone: {
         modelPath: 'models/iphone-15-pro-max.glb',
         aspectRatio: 1290 / 2796,
-        screenHeightFactor: 0.82,
-        screenOffset: { x: 0.025, y: 0.745, z: 0.098 },
+        screenHeightFactor: 0.826,
+        screenOffset: { x: 0.027, y: 0.745, z: 0.098 },
         positionOffsetFactor: 0.81,
-        cornerRadiusFactor: 0.15,
+        cornerRadiusFactor: 0.16,
         modelRotation: { x: 0, y: 0, z: 0 }  // No correction needed
     },
     samsung: {
