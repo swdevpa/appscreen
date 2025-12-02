@@ -4753,7 +4753,7 @@ async function exportAllForLanguage(lang) {
     const content = await zip.generateAsync({ type: 'blob' });
 
     showExportProgress('Complete!', '', 100);
-    await new Promise(resolve => setTimeout(resolve, 300));
+    await new Promise(resolve => setTimeout(resolve, 1500));
     hideExportProgress();
 
     const link = document.createElement('a');
@@ -4827,7 +4827,7 @@ async function exportAllLanguages() {
     const content = await zip.generateAsync({ type: 'blob' });
 
     showExportProgress('Complete!', '', 100);
-    await new Promise(resolve => setTimeout(resolve, 300));
+    await new Promise(resolve => setTimeout(resolve, 1500));
     hideExportProgress();
 
     const link = document.createElement('a');
