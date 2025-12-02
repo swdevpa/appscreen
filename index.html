@@ -33,6 +33,24 @@
                 <div class="sidebar-header">
                     <h2>Project</h2>
                     <div class="sidebar-header-buttons">
+                        <div class="language-picker" id="language-picker">
+                            <button class="language-btn" id="language-btn" title="Language">
+                                <span class="language-btn-flag" id="language-btn-flag">🇺🇸</span>
+                            </button>
+                            <div class="language-menu" id="language-menu">
+                                <div class="language-menu-items" id="language-menu-items">
+                                    <!-- Language options populated by JS -->
+                                </div>
+                                <div class="language-menu-divider"></div>
+                                <button class="language-menu-edit" id="edit-languages-btn">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                                        <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                    </svg>
+                                    Edit Languages...
+                                </button>
+                            </div>
+                        </div>
                         <button class="settings-btn" id="about-btn" title="About">
                             <img src="img/info.svg" width="18" height="18" alt="About">
                         </button>
@@ -673,22 +691,14 @@
 
                 <div id="headline-options">
                 <div class="control-group">
-                    <div class="label-with-action">
-                        <div class="language-selector" id="headline-languages">
-                            <button class="language-flag active" data-lang="en" title="English (US)">🇺🇸</button>
-                        </div>
-                        <button class="add-language-btn" id="add-headline-lang" title="Add language">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 5v14M5 12h14"/>
-                            </svg>
-                        </button>
+                    <div class="textarea-with-button">
+                        <textarea id="headline-text" rows="2" placeholder="Your feature headline"></textarea>
                         <button class="magic-translate-btn" id="translate-headline-btn" title="Translate to all languages">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M5 8l6 6M4 14l6-6 2-3M2 5h12M7 2v3M22 22l-5-10-5 10M14 18h6"/>
                             </svg>
                         </button>
                     </div>
-                    <textarea id="headline-text" rows="2" placeholder="Your feature headline"></textarea>
                 </div>
 
                 <div class="control-group">
@@ -795,22 +805,14 @@
 
                 <div id="subheadline-options" style="display: none;">
                 <div class="control-group">
-                    <div class="label-with-action">
-                        <div class="language-selector" id="subheadline-languages">
-                            <button class="language-flag active" data-lang="en" title="English (US)">🇺🇸</button>
-                        </div>
-                        <button class="add-language-btn" id="add-subheadline-lang" title="Add language">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 5v14M5 12h14"/>
-                            </svg>
-                        </button>
+                    <div class="textarea-with-button">
+                        <textarea id="subheadline-text" rows="2" placeholder="Optional subheadline"></textarea>
                         <button class="magic-translate-btn" id="translate-subheadline-btn" title="Translate to all languages">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M5 8l6 6M4 14l6-6 2-3M2 5h12M7 2v3M22 22l-5-10-5 10M14 18h6"/>
                             </svg>
                         </button>
                     </div>
-                    <textarea id="subheadline-text" rows="2" placeholder="Optional subheadline"></textarea>
                 </div>
 
                 <div class="control-group">
@@ -943,35 +945,6 @@
                 <button class="modal-btn modal-btn-primary" onclick="convertProject()">Convert Project</button>
             </div>
         </div>
-    </div>
-
-    <!-- Language Dropdown -->
-    <div class="language-dropdown" id="language-dropdown">
-        <button class="language-option" data-lang="en" data-flag="🇺🇸"><span class="flag">🇺🇸</span> English (US)</button>
-        <button class="language-option" data-lang="en-gb" data-flag="🇬🇧"><span class="flag">🇬🇧</span> English (UK)</button>
-        <button class="language-option" data-lang="de" data-flag="🇩🇪"><span class="flag">🇩🇪</span> German</button>
-        <button class="language-option" data-lang="fr" data-flag="🇫🇷"><span class="flag">🇫🇷</span> French</button>
-        <button class="language-option" data-lang="es" data-flag="🇪🇸"><span class="flag">🇪🇸</span> Spanish</button>
-        <button class="language-option" data-lang="it" data-flag="🇮🇹"><span class="flag">🇮🇹</span> Italian</button>
-        <button class="language-option" data-lang="pt" data-flag="🇵🇹"><span class="flag">🇵🇹</span> Portuguese</button>
-        <button class="language-option" data-lang="pt-br" data-flag="🇧🇷"><span class="flag">🇧🇷</span> Portuguese (BR)</button>
-        <button class="language-option" data-lang="nl" data-flag="🇳🇱"><span class="flag">🇳🇱</span> Dutch</button>
-        <button class="language-option" data-lang="ru" data-flag="🇷🇺"><span class="flag">🇷🇺</span> Russian</button>
-        <button class="language-option" data-lang="ja" data-flag="🇯🇵"><span class="flag">🇯🇵</span> Japanese</button>
-        <button class="language-option" data-lang="ko" data-flag="🇰🇷"><span class="flag">🇰🇷</span> Korean</button>
-        <button class="language-option" data-lang="zh" data-flag="🇨🇳"><span class="flag">🇨🇳</span> Chinese (Simplified)</button>
-        <button class="language-option" data-lang="zh-tw" data-flag="🇹🇼"><span class="flag">🇹🇼</span> Chinese (Traditional)</button>
-        <button class="language-option" data-lang="ar" data-flag="🇸🇦"><span class="flag">🇸🇦</span> Arabic</button>
-        <button class="language-option" data-lang="hi" data-flag="🇮🇳"><span class="flag">🇮🇳</span> Hindi</button>
-        <button class="language-option" data-lang="tr" data-flag="🇹🇷"><span class="flag">🇹🇷</span> Turkish</button>
-        <button class="language-option" data-lang="pl" data-flag="🇵🇱"><span class="flag">🇵🇱</span> Polish</button>
-        <button class="language-option" data-lang="sv" data-flag="🇸🇪"><span class="flag">🇸🇪</span> Swedish</button>
-        <button class="language-option" data-lang="da" data-flag="🇩🇰"><span class="flag">🇩🇰</span> Danish</button>
-        <button class="language-option" data-lang="no" data-flag="🇳🇴"><span class="flag">🇳🇴</span> Norwegian</button>
-        <button class="language-option" data-lang="fi" data-flag="🇫🇮"><span class="flag">🇫🇮</span> Finnish</button>
-        <button class="language-option" data-lang="th" data-flag="🇹🇭"><span class="flag">🇹🇭</span> Thai</button>
-        <button class="language-option" data-lang="vi" data-flag="🇻🇳"><span class="flag">🇻🇳</span> Vietnamese</button>
-        <button class="language-option" data-lang="id" data-flag="🇮🇩"><span class="flag">🇮🇩</span> Indonesian</button>
     </div>
 
     <!-- Translate Modal -->
@@ -1145,6 +1118,36 @@
             </p>
             <div class="modal-buttons">
                 <button class="modal-btn modal-btn-confirm" id="about-modal-close" style="background: var(--accent);">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Languages Modal -->
+    <div class="modal-overlay" id="languages-modal">
+        <div class="modal languages-modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Project Languages</h3>
+                <button class="modal-close" id="languages-modal-close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 6L6 18M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <p class="modal-message">Manage the languages available for text in this project.</p>
+
+            <div class="languages-list" id="languages-list">
+                <!-- Languages will be populated by JS -->
+            </div>
+
+            <div class="add-language-section">
+                <select id="add-language-select" class="control-select">
+                    <option value="">Add a language...</option>
+                </select>
+            </div>
+
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-confirm" id="languages-modal-done" style="background: var(--accent);">Done</button>
             </div>
         </div>
     </div>

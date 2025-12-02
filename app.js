@@ -4,6 +4,8 @@ const state = {
     selectedIndex: 0,
     transferTarget: null, // Index of screenshot waiting to receive style transfer
     outputDevice: 'iphone-6.9',
+    currentLanguage: 'en', // Global current language for all text
+    projectLanguages: ['en'], // Languages available in this project
     customWidth: 1290,
     customHeight: 2796,
     // Default settings applied to new screenshots
@@ -165,9 +167,6 @@ const languageFlags = {
     'hi': '🇮🇳', 'tr': '🇹🇷', 'pl': '🇵🇱', 'sv': '🇸🇪', 'da': '🇩🇰',
     'no': '🇳🇴', 'fi': '🇫🇮', 'th': '🇹🇭', 'vi': '🇻🇳', 'id': '🇮🇩'
 };
-
-// Current language dropdown target
-let currentLanguageTarget = null;
 
 // Google Fonts configuration
 const googleFonts = {
@@ -962,6 +961,8 @@ function saveState() {
         outputDevice: state.outputDevice,
         customWidth: state.customWidth,
         customHeight: state.customHeight,
+        currentLanguage: state.currentLanguage,
+        projectLanguages: state.projectLanguages,
         defaults: state.defaults
     };
 
@@ -1068,6 +1069,10 @@ function loadState() {
                     state.customWidth = parsed.customWidth || 1320;
                     state.customHeight = parsed.customHeight || 2868;
 
+                    // Load global language settings
+                    state.currentLanguage = parsed.currentLanguage || 'en';
+                    state.projectLanguages = parsed.projectLanguages || ['en'];
+
                     // Load defaults (new format) or use migrated settings
                     if (parsed.defaults) {
                         state.defaults = parsed.defaults;
@@ -1122,6 +1127,8 @@ function resetStateToDefaults() {
     state.outputDevice = 'iphone-6.9';
     state.customWidth = 1320;
     state.customHeight = 2868;
+    state.currentLanguage = 'en';
+    state.projectLanguages = ['en'];
     state.defaults = {
         background: {
             type: 'gradient',
@@ -1258,6 +1265,9 @@ async function deleteProject() {
 
 // Sync UI controls with current state
 function syncUIWithState() {
+    // Update language button
+    updateLanguageButton();
+
     // Device selector dropdown
     document.querySelectorAll('.output-size-menu .device-option').forEach(opt => {
         opt.classList.toggle('selected', opt.dataset.device === state.outputDevice);
@@ -1587,37 +1597,44 @@ function setupEventListeners() {
         }
     });
 
-    // Language selector events
-    document.getElementById('add-headline-lang').addEventListener('click', (e) => {
+    // Language picker events
+    document.getElementById('language-btn').addEventListener('click', (e) => {
         e.stopPropagation();
-        showLanguageDropdown('headline', e.target.closest('.add-language-btn'));
+        const btn = e.currentTarget;
+        const menu = document.getElementById('language-menu');
+        menu.classList.toggle('visible');
+        if (menu.classList.contains('visible')) {
+            // Position menu below button using fixed positioning
+            const rect = btn.getBoundingClientRect();
+            menu.style.top = (rect.bottom + 4) + 'px';
+            menu.style.left = rect.left + 'px';
+            updateLanguageMenu();
+        }
     });
 
-    document.getElementById('add-subheadline-lang').addEventListener('click', (e) => {
-        e.stopPropagation();
-        showLanguageDropdown('subheadline', e.target.closest('.add-language-btn'));
-    });
-
-    // Language dropdown option clicks
-    document.querySelectorAll('.language-option').forEach(opt => {
-        opt.addEventListener('click', () => {
-            const lang = opt.dataset.lang;
-            const flag = opt.dataset.flag;
-            
-            if (currentLanguageTarget === 'headline') {
-                addHeadlineLanguage(lang, flag);
-            } else if (currentLanguageTarget === 'subheadline') {
-                addSubheadlineLanguage(lang, flag);
-            }
-            
-            hideLanguageDropdown();
-        });
-    });
-
-    // Close language dropdown when clicking outside
+    // Close language menu when clicking outside
     document.addEventListener('click', (e) => {
-        if (!e.target.closest('.language-dropdown') && !e.target.closest('.add-language-btn')) {
-            hideLanguageDropdown();
+        if (!e.target.closest('.language-picker')) {
+            document.getElementById('language-menu').classList.remove('visible');
+        }
+    });
+
+    // Edit Languages button
+    document.getElementById('edit-languages-btn').addEventListener('click', () => {
+        openLanguagesModal();
+    });
+
+    // Languages modal events
+    document.getElementById('languages-modal-close').addEventListener('click', closeLanguagesModal);
+    document.getElementById('languages-modal-done').addEventListener('click', closeLanguagesModal);
+    document.getElementById('languages-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'languages-modal') closeLanguagesModal();
+    });
+
+    document.getElementById('add-language-select').addEventListener('change', (e) => {
+        if (e.target.value) {
+            addProjectLanguage(e.target.value);
+            e.target.value = '';
         }
     });
 
@@ -2323,32 +2340,197 @@ function isPerScreenshotTextMode() {
     return true;
 }
 
-// Language helper functions
-function showLanguageDropdown(target, buttonElement) {
-    currentLanguageTarget = target;
-    const dropdown = document.getElementById('language-dropdown');
-    const rect = buttonElement.getBoundingClientRect();
-    
-    dropdown.style.position = 'fixed';
-    dropdown.style.top = (rect.bottom + 4) + 'px';
-    dropdown.style.left = (rect.left - 150 + rect.width) + 'px';
-    dropdown.classList.add('visible');
-    
-    // Hide already added languages
-    const existingLangs = target === 'headline' 
-        ? getTextSettings().headlineLanguages 
-        : getTextSettings().subheadlineLanguages;
-    
-    document.querySelectorAll('.language-option').forEach(opt => {
-        opt.style.display = existingLangs.includes(opt.dataset.lang) ? 'none' : 'flex';
+// Global language picker functions
+function updateLanguageMenu() {
+    const container = document.getElementById('language-menu-items');
+    container.innerHTML = '';
+
+    state.projectLanguages.forEach(lang => {
+        const btn = document.createElement('button');
+        btn.className = 'language-menu-item' + (lang === state.currentLanguage ? ' active' : '');
+        btn.innerHTML = `<span class="flag">${languageFlags[lang] || '🏳️'}</span> ${languageNames[lang] || lang.toUpperCase()}`;
+        btn.onclick = () => {
+            switchGlobalLanguage(lang);
+            document.getElementById('language-menu').classList.remove('visible');
+        };
+        container.appendChild(btn);
     });
 }
 
-function hideLanguageDropdown() {
-    document.getElementById('language-dropdown').classList.remove('visible');
-    currentLanguageTarget = null;
+function updateLanguageButton() {
+    const flag = languageFlags[state.currentLanguage] || '🏳️';
+    document.getElementById('language-btn-flag').textContent = flag;
 }
 
+function switchGlobalLanguage(lang) {
+    state.currentLanguage = lang;
+
+    // Update all screenshots to use this language for display
+    state.screenshots.forEach(screenshot => {
+        screenshot.text.currentHeadlineLang = lang;
+        screenshot.text.currentSubheadlineLang = lang;
+    });
+
+    // Update UI
+    updateLanguageButton();
+    syncUIWithState();
+    updateCanvas();
+    saveState();
+}
+
+// Languages modal functions
+function openLanguagesModal() {
+    document.getElementById('language-menu').classList.remove('visible');
+    document.getElementById('languages-modal').classList.add('visible');
+    updateLanguagesList();
+    updateAddLanguageSelect();
+}
+
+function closeLanguagesModal() {
+    document.getElementById('languages-modal').classList.remove('visible');
+}
+
+function updateLanguagesList() {
+    const container = document.getElementById('languages-list');
+    container.innerHTML = '';
+
+    state.projectLanguages.forEach(lang => {
+        const item = document.createElement('div');
+        item.className = 'language-item';
+
+        const flag = languageFlags[lang] || '🏳️';
+        const name = languageNames[lang] || lang.toUpperCase();
+        const isCurrent = lang === state.currentLanguage;
+        const isOnly = state.projectLanguages.length === 1;
+
+        item.innerHTML = `
+            <span class="flag">${flag}</span>
+            <span class="name">${name}</span>
+            ${isCurrent ? '<span class="current-badge">Current</span>' : ''}
+            <button class="remove-btn" ${isOnly ? 'disabled' : ''} title="${isOnly ? 'Cannot remove the only language' : 'Remove language'}">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        `;
+
+        const removeBtn = item.querySelector('.remove-btn');
+        if (!isOnly) {
+            removeBtn.addEventListener('click', () => removeProjectLanguage(lang));
+        }
+
+        container.appendChild(item);
+    });
+}
+
+function updateAddLanguageSelect() {
+    const select = document.getElementById('add-language-select');
+    select.innerHTML = '<option value="">Add a language...</option>';
+
+    // Add all available languages that aren't already in the project
+    Object.keys(languageNames).forEach(lang => {
+        if (!state.projectLanguages.includes(lang)) {
+            const flag = languageFlags[lang] || '🏳️';
+            const name = languageNames[lang];
+            const option = document.createElement('option');
+            option.value = lang;
+            option.textContent = `${flag} ${name}`;
+            select.appendChild(option);
+        }
+    });
+}
+
+function addProjectLanguage(lang) {
+    if (!lang || state.projectLanguages.includes(lang)) return;
+
+    state.projectLanguages.push(lang);
+
+    // Add the language to all screenshots' text settings
+    state.screenshots.forEach(screenshot => {
+        if (!screenshot.text.headlineLanguages.includes(lang)) {
+            screenshot.text.headlineLanguages.push(lang);
+            if (!screenshot.text.headlines) screenshot.text.headlines = { en: '' };
+            screenshot.text.headlines[lang] = '';
+        }
+        if (!screenshot.text.subheadlineLanguages.includes(lang)) {
+            screenshot.text.subheadlineLanguages.push(lang);
+            if (!screenshot.text.subheadlines) screenshot.text.subheadlines = { en: '' };
+            screenshot.text.subheadlines[lang] = '';
+        }
+    });
+
+    // Also update defaults
+    if (!state.defaults.text.headlineLanguages.includes(lang)) {
+        state.defaults.text.headlineLanguages.push(lang);
+        if (!state.defaults.text.headlines) state.defaults.text.headlines = { en: '' };
+        state.defaults.text.headlines[lang] = '';
+    }
+    if (!state.defaults.text.subheadlineLanguages.includes(lang)) {
+        state.defaults.text.subheadlineLanguages.push(lang);
+        if (!state.defaults.text.subheadlines) state.defaults.text.subheadlines = { en: '' };
+        state.defaults.text.subheadlines[lang] = '';
+    }
+
+    updateLanguagesList();
+    updateAddLanguageSelect();
+    updateLanguageMenu();
+    saveState();
+}
+
+function removeProjectLanguage(lang) {
+    if (state.projectLanguages.length <= 1) return; // Must have at least one language
+
+    const index = state.projectLanguages.indexOf(lang);
+    if (index > -1) {
+        state.projectLanguages.splice(index, 1);
+
+        // If removing the current language, switch to the first available
+        if (state.currentLanguage === lang) {
+            switchGlobalLanguage(state.projectLanguages[0]);
+        }
+
+        // Remove from all screenshots
+        state.screenshots.forEach(screenshot => {
+            const hIndex = screenshot.text.headlineLanguages.indexOf(lang);
+            if (hIndex > -1) {
+                screenshot.text.headlineLanguages.splice(hIndex, 1);
+                delete screenshot.text.headlines[lang];
+            }
+            const sIndex = screenshot.text.subheadlineLanguages.indexOf(lang);
+            if (sIndex > -1) {
+                screenshot.text.subheadlineLanguages.splice(sIndex, 1);
+                delete screenshot.text.subheadlines[lang];
+            }
+            if (screenshot.text.currentHeadlineLang === lang) {
+                screenshot.text.currentHeadlineLang = state.projectLanguages[0];
+            }
+            if (screenshot.text.currentSubheadlineLang === lang) {
+                screenshot.text.currentSubheadlineLang = state.projectLanguages[0];
+            }
+        });
+
+        // Remove from defaults
+        const dhIndex = state.defaults.text.headlineLanguages.indexOf(lang);
+        if (dhIndex > -1) {
+            state.defaults.text.headlineLanguages.splice(dhIndex, 1);
+            delete state.defaults.text.headlines[lang];
+        }
+        const dsIndex = state.defaults.text.subheadlineLanguages.indexOf(lang);
+        if (dsIndex > -1) {
+            state.defaults.text.subheadlineLanguages.splice(dsIndex, 1);
+            delete state.defaults.text.subheadlines[lang];
+        }
+
+        updateLanguagesList();
+        updateAddLanguageSelect();
+        updateLanguageMenu();
+        updateLanguageButton();
+        syncUIWithState();
+        saveState();
+    }
+}
+
+// Language helper functions
 function addHeadlineLanguage(lang, flag) {
     const text = getTextSettings();
     if (!text.headlineLanguages.includes(lang)) {
@@ -2414,12 +2596,7 @@ function removeSubheadlineLanguage(lang) {
 function switchHeadlineLanguage(lang) {
     const text = getTextSettings();
     text.currentHeadlineLang = lang;
-    
-    // Update UI
-    document.querySelectorAll('#headline-languages .language-flag').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.lang === lang);
-    });
-    
+
     // Load text for this language
     document.getElementById('headline-text').value = text.headlines[lang] || '';
     updateCanvas();
@@ -2428,71 +2605,18 @@ function switchHeadlineLanguage(lang) {
 function switchSubheadlineLanguage(lang) {
     const text = getTextSettings();
     text.currentSubheadlineLang = lang;
-    
-    // Update UI
-    document.querySelectorAll('#subheadline-languages .language-flag').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.lang === lang);
-    });
-    
+
     // Load text for this language
     document.getElementById('subheadline-text').value = text.subheadlines[lang] || '';
     updateCanvas();
 }
 
 function updateHeadlineLanguageUI() {
-    const text = getTextSettings();
-    const container = document.getElementById('headline-languages');
-    container.innerHTML = '';
-    
-    text.headlineLanguages.forEach(lang => {
-        const btn = document.createElement('button');
-        btn.className = 'language-flag' + (lang === text.currentHeadlineLang ? ' active' : '');
-        btn.dataset.lang = lang;
-        btn.title = lang.toUpperCase();
-        btn.innerHTML = languageFlags[lang] || '🏳️';
-        
-        if (lang !== 'en') {
-            const removeBtn = document.createElement('span');
-            removeBtn.className = 'remove-lang';
-            removeBtn.innerHTML = '×';
-            removeBtn.onclick = (e) => {
-                e.stopPropagation();
-                removeHeadlineLanguage(lang);
-            };
-            btn.appendChild(removeBtn);
-        }
-        
-        btn.onclick = () => switchHeadlineLanguage(lang);
-        container.appendChild(btn);
-    });
+    // Language flag UI removed - translations now managed through translate modal
 }
 
 function updateSubheadlineLanguageUI() {
-    const text = getTextSettings();
-    const container = document.getElementById('subheadline-languages');
-    container.innerHTML = '';
-    
-    text.subheadlineLanguages.forEach(lang => {
-        const btn = document.createElement('button');
-        btn.className = 'language-flag' + (lang === text.currentSubheadlineLang ? ' active' : '');
-        btn.dataset.lang = lang;
-        btn.title = lang.toUpperCase();
-        btn.innerHTML = languageFlags[lang] || '🏳️';
-        
-        if (lang !== 'en') {
-            const removeBtn = document.createElement('span');
-            removeBtn.className = 'remove-lang';
-            removeBtn.innerHTML = '×';
-            removeBtn.onclick = (e) => {
-                e.stopPropagation();
-                removeSubheadlineLanguage(lang);
-            };
-            btn.appendChild(removeBtn);
-        }
-        
-        btn.onclick = () => switchSubheadlineLanguage(lang);
-        container.appendChild(btn);
-    });
+    // Language flag UI removed - translations now managed through translate modal
 }
 
 // Translate modal functions
@@ -2517,16 +2641,15 @@ function openTranslateModal(target) {
     
     const languages = isHeadline ? text.headlineLanguages : text.subheadlineLanguages;
     const texts = isHeadline ? text.headlines : text.subheadlines;
-    const currentLang = isHeadline ? text.currentHeadlineLang : text.currentSubheadlineLang;
-    
-    // Populate source language dropdown
+
+    // Populate source language dropdown (first language selected by default)
     const sourceSelect = document.getElementById('translate-source-lang');
     sourceSelect.innerHTML = '';
-    languages.forEach(lang => {
+    languages.forEach((lang, index) => {
         const option = document.createElement('option');
         option.value = lang;
         option.textContent = `${languageFlags[lang]} ${languageNames[lang] || lang}`;
-        if (lang === currentLang) option.selected = true;
+        if (index === 0) option.selected = true;
         sourceSelect.appendChild(option);
     });
     
