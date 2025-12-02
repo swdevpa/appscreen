@@ -127,6 +127,7 @@ Built something with this tool? Add your app to the list by submitting a pull re
 MIT License - feel free to use, modify, and distribute.
 
 ## Credits
+- **Samsung Galaxy S25 Ultra 3D Model** by [mistJS](https://sketchfab.com/mistjs) - Licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 
 - **iPhone 15 Pro Max 3D Model** by [MajdyModels](https://sketchfab.com/majdymodels) - Licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 
