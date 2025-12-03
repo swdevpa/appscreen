@@ -199,6 +199,11 @@ function addLocalizedImage(screenshotIndex, lang, image, src, name) {
         name: name
     };
 
+    // Auto-add language to project if not already present
+    if (!state.projectLanguages.includes(lang)) {
+        addProjectLanguage(lang);
+    }
+
     // Update displays
     updateScreenshotList();
     updateCanvas();
