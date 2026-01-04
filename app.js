@@ -642,7 +642,7 @@ async function renderFontList(pickerId, ids) {
                  data-font-category="${font.category}">
                 <span class="font-option-name" style="font-family: ${isLoaded ? font.value : 'inherit'}">${font.name}</span>
                 ${isLoading ? '<span class="font-option-loading">Loading...</span>' :
-                  `<span class="font-option-category">${font.category}</span>`}
+                `<span class="font-option-category">${font.category}</span>`}
             </div>
         `;
     }).join('');
@@ -830,37 +830,37 @@ function openDatabase() {
     return new Promise((resolve, reject) => {
         try {
             const request = indexedDB.open(DB_NAME, DB_VERSION);
-            
+
             request.onerror = (event) => {
                 console.error('IndexedDB error:', event.target.error);
                 // Continue without database
                 resolve(null);
             };
-            
+
             request.onsuccess = () => {
                 db = request.result;
                 resolve(db);
             };
-            
+
             request.onupgradeneeded = (event) => {
                 const database = event.target.result;
-                
+
                 // Delete old store if exists (from version 1)
                 if (database.objectStoreNames.contains('state')) {
                     database.deleteObjectStore('state');
                 }
-                
+
                 // Create projects store
                 if (!database.objectStoreNames.contains(PROJECTS_STORE)) {
                     database.createObjectStore(PROJECTS_STORE, { keyPath: 'id' });
                 }
-                
+
                 // Create meta store for project list and current project
                 if (!database.objectStoreNames.contains(META_STORE)) {
                     database.createObjectStore(META_STORE, { keyPath: 'key' });
                 }
             };
-            
+
             request.onblocked = () => {
                 console.warn('Database upgrade blocked. Please close other tabs.');
                 resolve(null);
@@ -875,15 +875,15 @@ function openDatabase() {
 // Load project list and current project
 async function loadProjectsMeta() {
     if (!db) return;
-    
+
     return new Promise((resolve) => {
         try {
             const transaction = db.transaction([META_STORE], 'readonly');
             const store = transaction.objectStore(META_STORE);
-            
+
             const projectsReq = store.get('projects');
             const currentReq = store.get('currentProject');
-            
+
             transaction.oncomplete = () => {
                 if (projectsReq.result) {
                     projects = projectsReq.result.value;
@@ -894,7 +894,7 @@ async function loadProjectsMeta() {
                 updateProjectSelector();
                 resolve();
             };
-            
+
             transaction.onerror = () => resolve();
         } catch (e) {
             resolve();
@@ -905,7 +905,7 @@ async function loadProjectsMeta() {
 // Save project list and current project
 function saveProjectsMeta() {
     if (!db) return;
-    
+
     try {
         const transaction = db.transaction([META_STORE], 'readwrite');
         const store = transaction.objectStore(META_STORE);
@@ -1000,12 +1000,25 @@ function saveState() {
             });
         }
 
+        // Clone background to avoid modifying state
+        let backgroundToSave = s.background;
+        if (s.background) {
+            backgroundToSave = JSON.parse(JSON.stringify(s.background));
+            // Handle Image object in background
+            if (s.background.image && s.background.image instanceof Image) {
+                backgroundToSave.image = s.background.image.src;
+            } else if (s.background.image && typeof s.background.image !== 'string') {
+                // Fallback if it's some other object but has src, or just null it if unsafe
+                backgroundToSave.image = s.background.image.src || null;
+            }
+        }
+
         return {
             src: s.image?.src || '', // Legacy compatibility
             name: s.name,
             deviceType: s.deviceType,
             localizedImages: localizedImages,
-            background: s.background,
+            background: backgroundToSave,
             screenshot: s.screenshot,
             text: s.text,
             overrides: s.overrides
@@ -1043,13 +1056,13 @@ function saveState() {
 // Load state from IndexedDB for current project
 function loadState() {
     if (!db) return Promise.resolve();
-    
+
     return new Promise((resolve) => {
         try {
             const transaction = db.transaction([PROJECTS_STORE], 'readonly');
             const store = transaction.objectStore(PROJECTS_STORE);
             const request = store.get(currentProjectId);
-            
+
             request.onsuccess = () => {
                 const parsed = request.result;
                 if (parsed) {
@@ -1118,12 +1131,20 @@ function loadState() {
                                             if (langLoadedCount === langKeys.length) {
                                                 // All language versions loaded
                                                 const firstLang = langKeys[0];
+                                                // Hydrate background image if it's a string
+                                                const background = s.background || JSON.parse(JSON.stringify(migratedBackground));
+                                                if (background.image && typeof background.image === 'string') {
+                                                    const bgImg = new Image();
+                                                    bgImg.src = background.image;
+                                                    background.image = bgImg;
+                                                }
+
                                                 state.screenshots[index] = {
                                                     image: localizedImages[firstLang]?.image, // Legacy compat
                                                     name: s.name,
                                                     deviceType: s.deviceType,
                                                     localizedImages: localizedImages,
-                                                    background: s.background || JSON.parse(JSON.stringify(migratedBackground)),
+                                                    background: background,
                                                     screenshot: s.screenshot || JSON.parse(JSON.stringify(migratedScreenshot)),
                                                     text: s.text || JSON.parse(JSON.stringify(migratedText)),
                                                     overrides: s.overrides || {}
@@ -1217,7 +1238,7 @@ function loadState() {
                 }
                 resolve();
             };
-            
+
             request.onerror = () => {
                 console.error('Error loading state:', request.error);
                 resolve();
@@ -1333,10 +1354,10 @@ function resetStateToDefaults() {
 async function switchProject(projectId) {
     // Save current project first
     saveState();
-    
+
     currentProjectId = projectId;
     saveProjectsMeta();
-    
+
     // Reset and load new project
     resetStateToDefaults();
     await loadState();
@@ -1434,13 +1455,13 @@ function syncUIWithState() {
     document.getElementById('image-options').style.display = bg.type === 'image' ? 'block' : 'none';
 
     // Gradient
-    document.getElementById('gradient-angle').value = bg.gradient.angle;
-    document.getElementById('gradient-angle-value').textContent = formatValue(bg.gradient.angle) + '°';
+    document.getElementById('gradient-angle').value = bg.gradient?.angle || 135;
+    document.getElementById('gradient-angle-value').textContent = formatValue(bg.gradient?.angle || 135) + '°';
     updateGradientStopsUI();
 
     // Solid color
-    document.getElementById('solid-color').value = bg.solid;
-    document.getElementById('solid-color-hex').value = bg.solid;
+    document.getElementById('solid-color').value = bg.solid || '#000000';
+    document.getElementById('solid-color-hex').value = bg.solid || '#000000';
 
     // Image background
     document.getElementById('bg-image-fit').value = bg.imageFit;
@@ -1671,7 +1692,7 @@ function setupEventListeners() {
             return;
         }
         const project = projects.find(p => p.id === currentProjectId);
-        document.getElementById('delete-project-message').textContent = 
+        document.getElementById('delete-project-message').textContent =
             `Are you sure you want to delete "${project ? project.name : 'this project'}"? This cannot be undone.`;
         document.getElementById('delete-project-modal').classList.add('visible');
     });
@@ -1687,14 +1708,14 @@ function setupEventListeners() {
             alert('Please enter a project name');
             return;
         }
-        
+
         const mode = document.getElementById('project-modal').dataset.mode;
         if (mode === 'new') {
             createProject(name);
         } else if (mode === 'rename') {
             renameProject(name);
         }
-        
+
         document.getElementById('project-modal').classList.remove('visible');
     });
 
@@ -1781,6 +1802,25 @@ function setupEventListeners() {
         dismissMagicalTitlesTooltip();
         showMagicalTitlesDialog();
     });
+
+    // Magical Designer button
+    const magicalDesignerBtn = document.getElementById('magical-designer-btn');
+    if (magicalDesignerBtn) {
+        magicalDesignerBtn.addEventListener('click', () => {
+            // Dismiss title tooltip if active to avoid clutter
+            dismissMagicalTitlesTooltip();
+            if (typeof showMagicalDesignerDialog === 'function') {
+                showMagicalDesignerDialog();
+            }
+        });
+
+        // Show tooltip logic check could go here or in init
+        setTimeout(() => {
+            if (typeof showMagicalDesignerTooltip === 'function') {
+                showMagicalDesignerTooltip();
+            }
+        }, 1000);
+    }
 
     // Magical Titles modal events
     document.getElementById('magical-titles-cancel').addEventListener('click', hideMagicalTitlesDialog);
@@ -2003,11 +2043,11 @@ function setupEventListeners() {
             document.querySelectorAll('#bg-type-selector button').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             setBackground('type', btn.dataset.type);
-            
+
             document.getElementById('gradient-options').style.display = btn.dataset.type === 'gradient' ? 'block' : 'none';
             document.getElementById('solid-options').style.display = btn.dataset.type === 'solid' ? 'block' : 'none';
             document.getElementById('image-options').style.display = btn.dataset.type === 'image' ? 'block' : 'none';
-            
+
             updateCanvas();
         });
     });
@@ -2054,12 +2094,12 @@ function setupEventListeners() {
         swatch.addEventListener('click', () => {
             document.querySelectorAll('.preset-swatch').forEach(s => s.classList.remove('selected'));
             swatch.classList.add('selected');
-            
+
             // Parse gradient from preset
             const gradientStr = swatch.dataset.gradient;
             const angleMatch = gradientStr.match(/(\d+)deg/);
             const colorMatches = gradientStr.matchAll(/(#[a-fA-F0-9]{6})\s+(\d+)%/g);
-            
+
             if (angleMatch) {
                 const angle = parseInt(angleMatch[1]);
                 setBackground('gradient.angle', angle);
@@ -2075,7 +2115,7 @@ function setupEventListeners() {
                 setBackground('gradient.stops', stops);
                 updateGradientStopsUI();
             }
-            
+
             updateCanvas();
         });
     });
@@ -2162,7 +2202,7 @@ function setupEventListeners() {
     });
 
     // Noise toggle
-    document.getElementById('noise-toggle').addEventListener('click', function() {
+    document.getElementById('noise-toggle').addEventListener('click', function () {
         this.classList.toggle('active');
         const noiseEnabled = this.classList.contains('active');
         setBackground('noise', noiseEnabled);
@@ -2215,7 +2255,7 @@ function setupEventListeners() {
     });
 
     // Shadow toggle
-    document.getElementById('shadow-toggle').addEventListener('click', function() {
+    document.getElementById('shadow-toggle').addEventListener('click', function () {
         this.classList.toggle('active');
         const shadowEnabled = this.classList.contains('active');
         setScreenshotSetting('shadow.enabled', shadowEnabled);
@@ -2261,7 +2301,7 @@ function setupEventListeners() {
     });
 
     // Frame toggle
-    document.getElementById('frame-toggle').addEventListener('click', function() {
+    document.getElementById('frame-toggle').addEventListener('click', function () {
         this.classList.toggle('active');
         const frameEnabled = this.classList.contains('active');
         setScreenshotSetting('frame.enabled', frameEnabled);
@@ -2303,7 +2343,7 @@ function setupEventListeners() {
     });
 
     // Headline toggle
-    document.getElementById('headline-toggle').addEventListener('click', function() {
+    document.getElementById('headline-toggle').addEventListener('click', function () {
         this.classList.toggle('active');
         const enabled = this.classList.contains('active');
         setTextValue('headlineEnabled', enabled);
@@ -2319,7 +2359,7 @@ function setupEventListeners() {
     });
 
     // Subheadline toggle
-    document.getElementById('subheadline-toggle').addEventListener('click', function() {
+    document.getElementById('subheadline-toggle').addEventListener('click', function () {
         this.classList.toggle('active');
         const enabled = this.classList.contains('active');
         setTextValue('subheadlineEnabled', enabled);
@@ -2751,16 +2791,16 @@ function addSubheadlineLanguage(lang, flag) {
 function removeHeadlineLanguage(lang) {
     const text = getTextSettings();
     if (lang === 'en') return; // Can't remove default
-    
+
     const index = text.headlineLanguages.indexOf(lang);
     if (index > -1) {
         text.headlineLanguages.splice(index, 1);
         delete text.headlines[lang];
-        
+
         if (text.currentHeadlineLang === lang) {
             text.currentHeadlineLang = 'en';
         }
-        
+
         updateHeadlineLanguageUI();
         switchHeadlineLanguage(text.currentHeadlineLang);
         saveState();
@@ -2770,16 +2810,16 @@ function removeHeadlineLanguage(lang) {
 function removeSubheadlineLanguage(lang) {
     const text = getTextSettings();
     if (lang === 'en') return; // Can't remove default
-    
+
     const index = text.subheadlineLanguages.indexOf(lang);
     if (index > -1) {
         text.subheadlineLanguages.splice(index, 1);
         delete text.subheadlines[lang];
-        
+
         if (text.currentSubheadlineLang === lang) {
             text.currentSubheadlineLang = 'en';
         }
-        
+
         updateSubheadlineLanguageUI();
         switchSubheadlineLanguage(text.currentSubheadlineLang);
         saveState();
@@ -2816,7 +2856,7 @@ function updateSubheadlineLanguageUI() {
 let currentTranslateTarget = null;
 
 const languageNames = {
-    'en': 'English (US)', 'en-gb': 'English (UK)', 'de': 'German', 'fr': 'French', 
+    'en': 'English (US)', 'en-gb': 'English (UK)', 'de': 'German', 'fr': 'French',
     'es': 'Spanish', 'it': 'Italian', 'pt': 'Portuguese', 'pt-br': 'Portuguese (BR)',
     'nl': 'Dutch', 'ru': 'Russian', 'ja': 'Japanese', 'ko': 'Korean',
     'zh': 'Chinese (Simplified)', 'zh-tw': 'Chinese (Traditional)', 'ar': 'Arabic',
@@ -2829,9 +2869,9 @@ function openTranslateModal(target) {
     currentTranslateTarget = target;
     const text = getTextSettings();
     const isHeadline = target === 'headline';
-    
+
     document.getElementById('translate-target-type').textContent = isHeadline ? 'Headline' : 'Subheadline';
-    
+
     const languages = isHeadline ? text.headlineLanguages : text.subheadlineLanguages;
     const texts = isHeadline ? text.headlines : text.subheadlines;
 
@@ -2845,14 +2885,14 @@ function openTranslateModal(target) {
         if (index === 0) option.selected = true;
         sourceSelect.appendChild(option);
     });
-    
+
     // Update source preview
     updateTranslateSourcePreview();
-    
+
     // Populate target languages
     const targetsContainer = document.getElementById('translate-targets');
     targetsContainer.innerHTML = '';
-    
+
     languages.forEach(lang => {
         const item = document.createElement('div');
         item.className = 'translate-target-item';
@@ -2866,7 +2906,7 @@ function openTranslateModal(target) {
         `;
         targetsContainer.appendChild(item);
     });
-    
+
     document.getElementById('translate-modal').classList.add('visible');
 }
 
@@ -2876,7 +2916,7 @@ function updateTranslateSourcePreview() {
     const isHeadline = currentTranslateTarget === 'headline';
     const texts = isHeadline ? text.headlines : text.subheadlines;
     const sourceText = texts[sourceLang] || '';
-    
+
     document.getElementById('source-text-preview').textContent = sourceText || 'No text entered';
 }
 
@@ -2884,14 +2924,14 @@ function applyTranslations() {
     const text = getTextSettings();
     const isHeadline = currentTranslateTarget === 'headline';
     const texts = isHeadline ? text.headlines : text.subheadlines;
-    
+
     // Get all translations from the modal
     document.querySelectorAll('#translate-targets .translate-target-item').forEach(item => {
         const lang = item.dataset.lang;
         const textarea = item.querySelector('textarea');
         texts[lang] = textarea.value;
     });
-    
+
     // Update the current text field
     const currentLang = isHeadline ? text.currentHeadlineLang : text.currentSubheadlineLang;
     if (isHeadline) {
@@ -2899,7 +2939,7 @@ function applyTranslations() {
     } else {
         document.getElementById('subheadline-text').value = texts[currentLang] || '';
     }
-    
+
     saveState();
     updateCanvas();
 }
@@ -3038,14 +3078,14 @@ Translate to these language codes: ${targetLangs.join(', ')}`;
 function showAppAlert(message, type = 'info') {
     return new Promise((resolve) => {
         const iconBg = type === 'error' ? 'rgba(255, 69, 58, 0.2)' :
-                       type === 'success' ? 'rgba(52, 199, 89, 0.2)' :
-                       'rgba(10, 132, 255, 0.2)';
+            type === 'success' ? 'rgba(52, 199, 89, 0.2)' :
+                'rgba(10, 132, 255, 0.2)';
         const iconColor = type === 'error' ? '#ff453a' :
-                          type === 'success' ? '#34c759' :
-                          'var(--accent)';
+            type === 'success' ? '#34c759' :
+                'var(--accent)';
         const iconPath = type === 'error' ? '<path d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>' :
-                         type === 'success' ? '<path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>' :
-                         '<path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>';
+            type === 'success' ? '<path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>' :
+                '<path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>';
 
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay visible';
@@ -4889,7 +4929,7 @@ function drawDeviceFrameToContext(context, x, y, width, height, settings) {
     context.strokeStyle = frameColor;
     context.lineWidth = frameWidth;
     context.beginPath();
-    context.roundRect(x - frameWidth/2, y - frameWidth/2, width + frameWidth, height + frameWidth, radius);
+    context.roundRect(x - frameWidth / 2, y - frameWidth / 2, width + frameWidth, height + frameWidth, radius);
     context.stroke();
     context.globalAlpha = 1;
 }
@@ -5193,7 +5233,7 @@ function drawDeviceFrame(x, y, width, height) {
     ctx.strokeStyle = frameColor;
     ctx.lineWidth = frameWidth;
     ctx.beginPath();
-    roundRect(ctx, x - frameWidth/2, y - frameWidth/2, width + frameWidth, height + frameWidth, radius);
+    roundRect(ctx, x - frameWidth / 2, y - frameWidth / 2, width + frameWidth, height + frameWidth, radius);
     ctx.stroke();
     ctx.globalAlpha = 1;
 }
@@ -5213,7 +5253,7 @@ function drawText() {
     if (!headline && !subheadline) return;
 
     const padding = dims.width * 0.08;
-    const textY = text.position === 'top' 
+    const textY = text.position === 'top'
         ? dims.height * (text.offsetY / 100)
         : dims.height * (1 - text.offsetY / 100);
 

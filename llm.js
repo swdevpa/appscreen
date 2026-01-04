@@ -96,3 +96,63 @@ function generateModelOptions(provider, selectedModel = null) {
         `<option value="${model.id}"${model.id === selected ? ' selected' : ''}>${model.name}</option>`
     ).join('\n');
 }
+
+/**
+ * Generate image using Google Gemini Image API
+ * @param {string} apiKey - Google API key
+ * @param {string} prompt - Text prompt for the image
+ * @returns {Promise<string>} - Base64 image data string
+ */
+async function generateImageWithGoogle(apiKey, prompt) {
+    const model = 'gemini-3-pro-image-preview'; // specific model for image generation
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            contents: [{
+                parts: [{ text: prompt }]
+            }],
+            generationConfig: {
+                responseModalities: ["IMAGE", "TEXT"],
+                imageConfig: {
+                    imageSize: "1K" // "1K" is a common standard, though "1024x1024" or similar might be more precise depending on API, assuming 1K is valid per user snippet
+                }
+            }
+        })
+    });
+
+    if (!response.ok) {
+        const status = response.status;
+        const errorBody = await response.json().catch(() => ({}));
+        console.error('Google Image API Error:', { status, model, error: errorBody });
+        if (status === 401 || status === 403) throw new Error('AI_UNAVAILABLE');
+        throw new Error(`API request failed: ${status} - ${errorBody.error?.message || 'Unknown error'}`);
+    }
+
+    // Handle streaming-like response format (REST API might return standard JSON but let's handle the structure)
+    // The user snippet shows a stream loop but for REST it usually returns a single response object if not streaming? 
+    // Wait, the user snippet used `generateContentStream`. The REST API `generateContent` (without stream) returns a full response.
+    // Let's assume standard generateContent return structure.
+
+    // User snippet structure for stream: chunk.candidates[0].content.parts[0].inlineData
+    // Standard response: candidates[0].content.parts[0].inlineData
+
+    const data = await response.json();
+
+    if (!data.candidates || !data.candidates[0]?.content?.parts) {
+        throw new Error('No image generated');
+    }
+
+    const part = data.candidates[0].content.parts.find(p => p.inlineData);
+    if (!part) {
+        // Fallback: check if there is text explaining why it failed or just text output
+        const textPart = data.candidates[0].content.parts.find(p => p.text);
+        if (textPart) throw new Error(`AI returned text instead of image: ${textPart.text}`);
+        throw new Error('No image data in response');
+    }
+
+    return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+}
